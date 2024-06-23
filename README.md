@@ -1,6 +1,6 @@
 # retguard
 
-`retguard` is a go linter that checks that every named return value has been assigned at least one
+`retguard` is a go linter that checks that every named return value has been assigned at least once
 
 
 ## Install
