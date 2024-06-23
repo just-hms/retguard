@@ -15,21 +15,6 @@ go install github.com/just-hms/retguard@latest
 retguard ./...
 ```
 
-## False positives
+## Issues
 
-- https://github.com/just-hms/retguard/issues/1
-
-    For now this is not considered an assignment, even if val can be modified in the `create` function, see: 
-
-    ```go
-    func create(input *int) {
-        *input = 0
-    }
-
-    // false positive
-    func FunctionComplexNegativeCase(a int) (val *int, err int) {
-        create(val)
-        err = 2
-        return
-    }
-    ```
+the linter is pretty new, checkout https://img.shields.io/github/labels/just-hms/retguard/falsepositive and https://img.shields.io/github/labels/just-hms/retguard/falsenegative issues before thinking that your code is broken
