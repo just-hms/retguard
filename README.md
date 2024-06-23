@@ -17,17 +17,19 @@ retguard ./...
 
 ## False positives
 
-For now this is not considered an assignment, even if val can be modified in the `create` function, see: https://github.com/just-hms/retguard/issues/1
+- https://github.com/just-hms/retguard/issues/1
 
-```go
-func create(input *int) {
-	*input = 0
-}
+    For now this is not considered an assignment, even if val can be modified in the `create` function, see: 
 
-// false positive
-func FunctionComplexNegativeCase(a int) (val *int, err int) {
-	create(val)
-	err = 2
-	return
-}
-```
+    ```go
+    func create(input *int) {
+        *input = 0
+    }
+
+    // false positive
+    func FunctionComplexNegativeCase(a int) (val *int, err int) {
+        create(val)
+        err = 2
+        return
+    }
+    ```
