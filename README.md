@@ -17,4 +17,4 @@ retguard ./...
 
 ## Issues
 
-the linter is pretty new, checkout https://github.com/just-hms/retguard/labels/falsepositive and https://github.com/just-hms/retguard/labels/falsenegative issues before thinking that your code is broken
+`retguard` linter is pretty new, check out https://github.com/just-hms/retguard/labels/falsepositive and https://github.com/just-hms/retguard/labels/falsenegative issues before thinking that your code is broken
