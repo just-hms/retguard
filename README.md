@@ -1,6 +1,6 @@
 # retguard
 
-`retguard` is a simple linter that checks that every named return value has been assigned at least one
+`retguard` is a go linter that checks that every named return value has been assigned at least one
 
 
 ## Install
@@ -17,7 +17,7 @@ retguard ./...
 
 ## False positives
 
-for now this is not considered an assignment, even if val can be modified in the `init` function
+For now this is not considered an assignment, even if val can be modified in the `create` function, see: https://github.com/just-hms/retguard/issues/1
 
 ```go
 func create(input *int) {
