@@ -29,7 +29,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 					continue
 				}
 				for _, name := range result.Names {
-					if !isAssigned(fn.Body, name.Name) {
+					if !isAssigned(fn.Body, name.Name) && isReturned(fn.Body, name.Name) {
 						pass.Reportf(name.Pos(), "named return value %s is never assigned", name.Name)
 					}
 				}
@@ -76,7 +76,8 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 				case *ast.Ident:
 					if lhs.Name == name {
 						if n.Tok == token.DEFINE {
-							return true
+							isShadowed = true
+							return false
 						}
 						assigned = true
 						return false
@@ -107,4 +108,61 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 	})
 
 	return assigned
+}
+
+func isReturned(block *ast.BlockStmt, name string) bool {
+	isShadowed := false
+	isReturned := false
+
+	ast.Inspect(block, func(n ast.Node) bool {
+		if isShadowed {
+			return false
+		}
+
+		switch n := n.(type) {
+
+		case *ast.DeclStmt:
+			// find out if "name" variable was shadowed
+			genDecl, ok := n.Decl.(*ast.GenDecl)
+			if !ok {
+				return true
+			}
+			for _, spec := range genDecl.Specs {
+				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
+					for _, ident := range valueSpec.Names {
+						if ident.Name == name {
+							isShadowed = true
+							return false
+						}
+					}
+				}
+			}
+		case *ast.AssignStmt:
+			// find out if "name" variable was shadowed
+			for _, lhs := range n.Lhs {
+				switch lhs := lhs.(type) {
+				case *ast.Ident:
+					if lhs.Name == name && n.Tok == token.DEFINE {
+						isShadowed = true
+						return false
+					}
+				}
+			}
+		case *ast.ReturnStmt:
+			if len(n.Results) == 0 {
+				isReturned = true
+				return false
+			}
+			for _, result := range n.Results {
+				if ident, ok := result.(*ast.Ident); ok && ident.Name == name {
+					isReturned = true
+					return false
+				}
+			}
+		}
+
+		return true
+	})
+
+	return isReturned
 }
