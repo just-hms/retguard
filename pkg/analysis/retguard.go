@@ -112,12 +112,9 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 
 func isReturned(block *ast.BlockStmt, name string) bool {
 	isShadowed := false
-	isReturned := false
+	isReturned := true
 
 	ast.Inspect(block, func(n ast.Node) bool {
-		if isShadowed {
-			return false
-		}
 
 		switch n := n.(type) {
 
@@ -132,25 +129,26 @@ func isReturned(block *ast.BlockStmt, name string) bool {
 					for _, ident := range valueSpec.Names {
 						if ident.Name == name {
 							isShadowed = true
-							return false
+							return true
 						}
 					}
 				}
 			}
 		case *ast.AssignStmt:
+
 			// find out if "name" variable was shadowed
 			for _, lhs := range n.Lhs {
 				switch lhs := lhs.(type) {
 				case *ast.Ident:
 					if lhs.Name == name && n.Tok == token.DEFINE {
 						isShadowed = true
-						return false
+						return true
 					}
 				}
 			}
 		case *ast.ReturnStmt:
-			if len(n.Results) == 0 {
-				isReturned = true
+			if isShadowed {
+				isReturned = false
 				return false
 			}
 			for _, result := range n.Results {
@@ -158,6 +156,10 @@ func isReturned(block *ast.BlockStmt, name string) bool {
 					isReturned = true
 					return false
 				}
+			}
+			if len(n.Results) != 0 {
+				isReturned = false
+				return false
 			}
 		}
 

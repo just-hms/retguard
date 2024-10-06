@@ -5,6 +5,10 @@ func SimpleNegativeCase(a int) (val int) {
 	return
 }
 
+func ReturnNegativeCase(a int) (val int) {
+	return 1
+}
+
 func DuplNegativeCase(a int) (val, err int) {
 	val = 1
 	err = 2
@@ -38,6 +42,13 @@ func ComplexNegativeCase(a int) (val hObj, err int) {
 	val.Content = 3
 	err = 2
 	return
+}
+
+func Override(a int) (err int) {
+	{
+		err := 2
+		return err
+	}
 }
 
 func hGetSequence(_ int) ([]string, error) { return []string{"A", "B"}, nil }

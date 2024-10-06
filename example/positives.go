@@ -58,7 +58,7 @@ func VarShadowingWithAssignmentPositiveCase(a int) (val, err int) {
 }
 
 // helpNotModifier couldn't modify the val in any case
-func FunctionPositiveeCase(a int) (val, err int) {
+func FunctionPositiveCase(a int) (val, err int) {
 	fmt.Println(val)
 	err = 2
 	return
