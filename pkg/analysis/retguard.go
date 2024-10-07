@@ -24,6 +24,9 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			if fn.Type.Results == nil {
 				return true
 			}
+
+			// should check the assignment only if the error is nil or false
+
 			for _, result := range fn.Type.Results.List {
 				if len(result.Names) == 0 {
 					continue
@@ -69,6 +72,11 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 					}
 				}
 			}
+		case *ast.IncDecStmt:
+			if ident, ok := n.X.(*ast.Ident); ok && ident.Name == name {
+				assigned = true
+				return false
+			}
 		// find out if "name" variable was assigned
 		case *ast.AssignStmt:
 			for _, lhs := range n.Lhs {
@@ -87,10 +95,16 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 						assigned = true
 						return false
 					}
+				case *ast.IndexExpr:
+					// Handle something[index] = value
+					if xIdent, ok := lhs.X.(*ast.Ident); ok && xIdent.Name == name {
+						assigned = true
+						return false
+					}
 				}
 			}
 
-		// find out if "name" was passed as reference
+		// find out if "name" was passed in a function
 		case *ast.CallExpr:
 			for _, arg := range n.Args {
 				switch arg := arg.(type) {
@@ -101,8 +115,14 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 							return false
 						}
 					}
+				case *ast.SelectorExpr:
+					if xIdent, ok := arg.X.(*ast.Ident); ok && xIdent.Name == name {
+						assigned = true
+						return false
+					}
 				}
 			}
+
 		}
 		return true
 	})
@@ -151,9 +171,9 @@ func isReturned(block *ast.BlockStmt, name string) bool {
 				isReturned = false
 				return false
 			}
+
 			for _, result := range n.Results {
 				if ident, ok := result.(*ast.Ident); ok && ident.Name == name {
-					isReturned = true
 					return false
 				}
 			}
