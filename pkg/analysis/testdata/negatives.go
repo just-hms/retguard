@@ -1,6 +1,9 @@
 package testdata
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 func SimpleNegativeCase(a int) (val int) {
 	val = 1
@@ -68,4 +71,25 @@ func RealExample(contextID int) (item string, err error) {
 	}
 
 	return seq[0], nil
+}
+
+type Scope int
+
+func (s *Scope) init() {}
+
+func InitFunc() (s Scope) {
+	s.init()
+	return s
+}
+
+func NotAssignedReturnWithError() (item string, err error) {
+	return item, fmt.Errorf("nothing found")
+}
+
+type Error struct{}
+
+// As returns the first vizerror.Error in err's chain.
+func As(err error) (e Error, ok bool) {
+	ok = errors.As(err, &e)
+	return
 }

@@ -1,6 +1,7 @@
 package analysis
 
 import (
+	"fmt"
 	"go/ast"
 	"go/token"
 	"strings"
@@ -57,6 +58,10 @@ func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos 
 
 	var blocks astx.Blocks
 	var pos *token.Pos
+
+	if name == "e" {
+		fmt.Println()
+	}
 
 	ast.Inspect(block, func(n ast.Node) bool {
 
@@ -130,7 +135,19 @@ func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos 
 			}
 			return false
 		case *ast.CallExpr:
+			if selExpr, ok := n.Fun.(*ast.SelectorExpr); ok {
+				if ident, ok := selExpr.X.(*ast.Ident); ok && ident.Name == name {
+					blocks.Assign(n)
+					return false
+				}
+			}
+
 			for _, arg := range n.Args {
+				if ident, ok := arg.(*ast.Ident); ok && ident.Name == name {
+					blocks.Assign(n)
+					return false
+				}
+
 				switch arg := arg.(type) {
 				case *ast.UnaryExpr:
 					if arg.Op == token.AND {
@@ -145,6 +162,7 @@ func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos 
 						return false
 					}
 				}
+
 			}
 
 		}
