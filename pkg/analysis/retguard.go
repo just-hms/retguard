@@ -3,7 +3,9 @@ package analysis
 import (
 	"go/ast"
 	"go/token"
+	"strings"
 
+	"github.com/just-hms/retguard/pkg/analysis/astx"
 	"golang.org/x/tools/go/analysis"
 )
 
@@ -27,17 +29,24 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 			// should check the assignment only if the error is nil or false
 
-			// todo: squash returns values
+			// squash returns values
+			toReport := map[token.Pos][]string{}
 			for _, result := range fn.Type.Results.List {
-				if len(result.Names) == 0 {
-					continue
-				}
 				for _, name := range result.Names {
 					if pos := firstReturnWithoutAssignment(fn.Body, name.Name); pos != nil {
-						pass.Reportf(*pos, "named return value %s is never assigned", name.Name)
+						toReport[*pos] = append(toReport[*pos], name.Name)
 					}
 				}
 			}
+
+			for pos, r := range toReport {
+				if len(r) == 1 {
+					pass.Reportf(pos, "named return value %s is never assigned", r[0])
+				} else {
+					pass.Reportf(pos, "named return values %s are never assigned", strings.Join(r, ", "))
+				}
+			}
+
 			return true
 		})
 	}
@@ -45,27 +54,16 @@ func run(pass *analysis.Pass) (interface{}, error) {
 }
 
 func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos {
+
+	var blocks astx.Blocks
 	var pos *token.Pos
 
-	var assignments, shadows []*ast.BlockStmt
-
-	isInside := func(pos ast.Node, zone []*ast.BlockStmt) bool {
-		for _, s := range zone {
-			if pos.Pos() >= s.Lbrace && pos.End() <= s.Rbrace {
-				return true
-			}
-		}
-		return false
-	}
-
-	var curBlock *ast.BlockStmt
 	ast.Inspect(block, func(n ast.Node) bool {
 
 		switch n := n.(type) {
 
-		// todo: check me
 		case *ast.BlockStmt:
-			curBlock = n
+			blocks.Insert(n)
 		case *ast.DeclStmt:
 			// find out if "name" variable was shadowed
 			genDecl, ok := n.Decl.(*ast.GenDecl)
@@ -73,18 +71,21 @@ func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos 
 				return true
 			}
 			for _, spec := range genDecl.Specs {
-				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
-					for _, ident := range valueSpec.Names {
-						if ident.Name == name {
-							shadows = append(shadows, curBlock)
-							return false
-						}
+				valueSpec, ok := spec.(*ast.ValueSpec)
+				if !ok {
+					continue
+				}
+				for _, ident := range valueSpec.Names {
+					if ident.Name != name {
+						continue
 					}
+					blocks.Shadow(n)
+					return false
 				}
 			}
 		case *ast.IncDecStmt:
 			if ident, ok := n.X.(*ast.Ident); ok && ident.Name == name {
-				assignments = append(assignments, curBlock)
+				blocks.Assign(n)
 				return false
 			}
 		case *ast.AssignStmt:
@@ -95,29 +96,26 @@ func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos 
 				case *ast.Ident:
 					if lhs.Name == name {
 						if n.Tok == token.ASSIGN {
-							assignments = append(assignments, curBlock)
+							blocks.Assign(n)
 						}
 						if n.Tok == token.DEFINE {
-							shadows = append(shadows, curBlock)
+							blocks.Shadow(n)
 						}
 					}
 				case *ast.SelectorExpr:
 					if ident, ok := lhs.X.(*ast.Ident); ok && ident.Name == name {
-						assignments = append(assignments, curBlock)
+						blocks.Assign(n)
 					}
 				case *ast.IndexExpr:
 					if xIdent, ok := lhs.X.(*ast.Ident); ok && xIdent.Name == name {
-						assignments = append(assignments, curBlock)
+						blocks.Assign(n)
 					}
 				}
-				return false
 			}
+			return false
 
 		case *ast.ReturnStmt:
-			if isInside(n, shadows) {
-				return false
-			}
-			if isInside(n, assignments) {
+			if blocks.GetState(n) != astx.NOTHING {
 				return false
 			}
 			for _, result := range n.Results {
@@ -137,13 +135,13 @@ func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos 
 				case *ast.UnaryExpr:
 					if arg.Op == token.AND {
 						if ident, ok := arg.X.(*ast.Ident); ok && ident.Name == name {
-							assignments = append(assignments, curBlock)
+							blocks.Assign(n)
 							return false
 						}
 					}
 				case *ast.SelectorExpr:
 					if xIdent, ok := arg.X.(*ast.Ident); ok && xIdent.Name == name {
-						assignments = append(assignments, curBlock)
+						blocks.Assign(n)
 						return false
 					}
 				}
