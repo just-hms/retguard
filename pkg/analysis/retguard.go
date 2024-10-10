@@ -27,13 +27,14 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 			// should check the assignment only if the error is nil or false
 
+			// todo: squash returns values
 			for _, result := range fn.Type.Results.List {
 				if len(result.Names) == 0 {
 					continue
 				}
 				for _, name := range result.Names {
-					if !isAssigned(fn.Body, name.Name) && isReturned(fn.Body, name.Name) {
-						pass.Reportf(name.Pos(), "named return value %s is never assigned", name.Name)
+					if pos := firstReturnWithoutAssignment(fn.Body, name.Name); pos != nil {
+						pass.Reportf(*pos, "named return value %s is never assigned", name.Name)
 					}
 				}
 			}
@@ -43,19 +44,28 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-func isAssigned(block *ast.BlockStmt, name string) bool {
-	assigned := false
-	isShadowed := false
+func firstReturnWithoutAssignment(block *ast.BlockStmt, name string) *token.Pos {
+	var pos *token.Pos
 
-	ast.Inspect(block, func(n ast.Node) bool {
-		// skip the block if the variable was shadowed
-		// after shadowing, even if there is an assignment involving a variable named "name", the first variable named "name" will never be assigned
-		if isShadowed {
-			return false
+	var assignments, shadows []*ast.BlockStmt
+
+	isInside := func(pos ast.Node, zone []*ast.BlockStmt) bool {
+		for _, s := range zone {
+			if pos.Pos() >= s.Lbrace && pos.End() <= s.Rbrace {
+				return true
+			}
 		}
+		return false
+	}
+
+	var curBlock *ast.BlockStmt
+	ast.Inspect(block, func(n ast.Node) bool {
 
 		switch n := n.(type) {
 
+		// todo: check me
+		case *ast.BlockStmt:
+			curBlock = n
 		case *ast.DeclStmt:
 			// find out if "name" variable was shadowed
 			genDecl, ok := n.Decl.(*ast.GenDecl)
@@ -66,7 +76,7 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
 					for _, ident := range valueSpec.Names {
 						if ident.Name == name {
-							isShadowed = true
+							shadows = append(shadows, curBlock)
 							return false
 						}
 					}
@@ -74,117 +84,75 @@ func isAssigned(block *ast.BlockStmt, name string) bool {
 			}
 		case *ast.IncDecStmt:
 			if ident, ok := n.X.(*ast.Ident); ok && ident.Name == name {
-				assigned = true
+				assignments = append(assignments, curBlock)
 				return false
 			}
-		// find out if "name" variable was assigned
 		case *ast.AssignStmt:
+
+			// find out if "name" variable was shadowed
 			for _, lhs := range n.Lhs {
 				switch lhs := lhs.(type) {
 				case *ast.Ident:
 					if lhs.Name == name {
-						if n.Tok == token.DEFINE {
-							isShadowed = true
-							return false
+						if n.Tok == token.ASSIGN {
+							assignments = append(assignments, curBlock)
 						}
-						assigned = true
-						return false
+						if n.Tok == token.DEFINE {
+							shadows = append(shadows, curBlock)
+						}
 					}
 				case *ast.SelectorExpr:
 					if ident, ok := lhs.X.(*ast.Ident); ok && ident.Name == name {
-						assigned = true
-						return false
+						assignments = append(assignments, curBlock)
 					}
 				case *ast.IndexExpr:
-					// Handle something[index] = value
 					if xIdent, ok := lhs.X.(*ast.Ident); ok && xIdent.Name == name {
-						assigned = true
-						return false
+						assignments = append(assignments, curBlock)
 					}
 				}
+				return false
 			}
 
-		// find out if "name" was passed in a function
+		case *ast.ReturnStmt:
+			if isInside(n, shadows) {
+				return false
+			}
+			if isInside(n, assignments) {
+				return false
+			}
+			for _, result := range n.Results {
+				if ident, ok := result.(*ast.Ident); ok && ident.Name == name {
+					pos = &n.Return
+					return false
+				}
+			}
+			if len(n.Results) == 0 {
+				pos = &n.Return
+				return false
+			}
+			return false
 		case *ast.CallExpr:
 			for _, arg := range n.Args {
 				switch arg := arg.(type) {
 				case *ast.UnaryExpr:
 					if arg.Op == token.AND {
 						if ident, ok := arg.X.(*ast.Ident); ok && ident.Name == name {
-							assigned = true
+							assignments = append(assignments, curBlock)
 							return false
 						}
 					}
 				case *ast.SelectorExpr:
 					if xIdent, ok := arg.X.(*ast.Ident); ok && xIdent.Name == name {
-						assigned = true
+						assignments = append(assignments, curBlock)
 						return false
 					}
 				}
 			}
 
 		}
-		return true
-	})
-
-	return assigned
-}
-
-func isReturned(block *ast.BlockStmt, name string) bool {
-	isShadowed := false
-	isReturned := true
-
-	ast.Inspect(block, func(n ast.Node) bool {
-
-		switch n := n.(type) {
-
-		case *ast.DeclStmt:
-			// find out if "name" variable was shadowed
-			genDecl, ok := n.Decl.(*ast.GenDecl)
-			if !ok {
-				return true
-			}
-			for _, spec := range genDecl.Specs {
-				if valueSpec, ok := spec.(*ast.ValueSpec); ok {
-					for _, ident := range valueSpec.Names {
-						if ident.Name == name {
-							isShadowed = true
-							return true
-						}
-					}
-				}
-			}
-		case *ast.AssignStmt:
-
-			// find out if "name" variable was shadowed
-			for _, lhs := range n.Lhs {
-				switch lhs := lhs.(type) {
-				case *ast.Ident:
-					if lhs.Name == name && n.Tok == token.DEFINE {
-						isShadowed = true
-						return true
-					}
-				}
-			}
-		case *ast.ReturnStmt:
-			if isShadowed {
-				isReturned = false
-				return false
-			}
-
-			for _, result := range n.Results {
-				if ident, ok := result.(*ast.Ident); ok && ident.Name == name {
-					return false
-				}
-			}
-			if len(n.Results) != 0 {
-				isReturned = false
-				return false
-			}
-		}
 
 		return true
 	})
 
-	return isReturned
+	return pos
 }
